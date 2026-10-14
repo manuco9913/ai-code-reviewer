@@ -1,0 +1,7 @@
+# Copy to worker/.dev.vars (git-ignored) for `npm run dev`.
+GEMINI_API_KEY=xxx
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_KEY=sb_secret_xxx
+GITHUB_TOKEN=github_pat_xxx
+# Any long random string; generate one with: node -e "console.log(crypto.randomUUID()+crypto.randomUUID())"
+API_TOKEN=change-me-to-a-long-random-string

@@ -66,3 +66,43 @@ npm run search -- "map markers" frontend/
    - Secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `GEMINI_API_KEY`, `TARGET_REPO_TOKEN` (the PAT).
    - Variables: `DEFAULT_TARGET_REPO` = `owner/name` of the repo to index nightly.
 4. **Actions → index-repo → Run workflow** (optionally enter another `owner/name`).
+
+## 5. Try the reviewer locally (no Cloudflare account needed yet)
+
+The reviewer reads a PR, the repo's standards (from the PR's **base** commit), linked issues, CI
+results and related indexed code, then asks Gemini for structured findings. In this step it only
+**returns** the review; posting it to GitHub comes with the approval flow.
+
+1. Give your fine-grained PAT these extra read permissions on the target repos:
+   **Pull requests: Read**, **Issues: Read** (and **Checks: Read** if offered; without it the review
+   just skips CI context).
+2. `copy worker\.dev.vars.example worker\.dev.vars` and fill it in.
+3. Run it:
+
+```powershell
+npm run dev    # starts the Worker on http://localhost:8787
+```
+
+In a second terminal:
+
+```powershell
+$token = "<API_TOKEN from .dev.vars>"
+Invoke-RestMethod -Method Post http://localhost:8787/api/review `
+  -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" `
+  -Body '{"repo":"owner/name","prNumber":42}' | ConvertTo-Json -Depth 6
+```
+
+### Optional: `.devflow.yml`
+
+Without it, the reviewer auto-discovers `CODING_STANDARDS.md`, `CONTRIBUTING.md`, `CLAUDE.md`,
+`AGENTS.md`, `.github/copilot-instructions.md` and the `tdd` / `improve-codebase-architecture`
+skills under `.claude/skills` or `.agents/skills`. Add the file to a repo's root to choose exactly:
+
+```yaml
+standards:
+  - CODING_STANDARDS.md
+  - path: docs/agents/frontend-style.md
+    applies_to: ["frontend/**"]     # only when the PR touches these paths
+skills: [tdd, improve-codebase-architecture]
+ignore: ["research/**"]             # changed files the reviewer skips
+```

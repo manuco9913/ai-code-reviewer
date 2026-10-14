@@ -1,0 +1,12 @@
+name = "devflow-ai"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# Non-secret settings. Secrets (GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_TOKEN,
+# API_TOKEN) are set with `npx wrangler secret put NAME`, or in worker/.dev.vars for local dev.
+[vars]
+GEMINI_MODEL = "gemini-2.5-flash"
+EMBEDDING_MODEL = "gemini-embedding-001"
+
+[observability]
+enabled = true
