@@ -1,0 +1,17 @@
+{
+  "name": "@devflow/indexer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file-if-exists=../.env --import tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "search": "node --env-file-if-exists=../.env --import tsx src/search.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5"
+  }
+}

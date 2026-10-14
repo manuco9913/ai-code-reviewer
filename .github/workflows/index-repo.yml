@@ -1,0 +1,55 @@
+name: index-repo
+
+# Indexes a repository into Supabase for DevFlow's code search.
+# Incremental: only files whose content changed since the last run are re-embedded.
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "owner/name to index (default: repository variable DEFAULT_TARGET_REPO)"
+        required: false
+      ref:
+        description: "Branch, tag or SHA (default: the repo's default branch)"
+        required: false
+  repository_dispatch:
+    types: [index-repo] # client_payload: { "repo": "owner/name", "ref": "main" }
+  schedule:
+    - cron: "17 3 * * *" # nightly safety net
+
+concurrency:
+  group: index-${{ inputs.repo || github.event.client_payload.repo || vars.DEFAULT_TARGET_REPO }}
+  cancel-in-progress: false
+
+jobs:
+  index:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      TARGET_REPO: ${{ inputs.repo || github.event.client_payload.repo || vars.DEFAULT_TARGET_REPO }}
+      TARGET_REF: ${{ inputs.ref || github.event.client_payload.ref || '' }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: devflow
+      - uses: actions/checkout@v5
+        with:
+          repository: ${{ env.TARGET_REPO }}
+          ref: ${{ env.TARGET_REF }}
+          token: ${{ secrets.TARGET_REPO_TOKEN }}
+          path: target
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: devflow/package-lock.json
+      - run: npm ci
+        working-directory: devflow
+      - run: npm run index
+        working-directory: devflow
+        env:
+          REPO: ${{ env.TARGET_REPO }}
+          REPO_DIR: ${{ github.workspace }}/target
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}

@@ -1,0 +1,22 @@
+{
+  "name": "devflow-ai",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "worker",
+    "indexer"
+  ],
+  "scripts": {
+    "typecheck": "npm run typecheck -w worker && npm run typecheck -w indexer",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test",
+    "dev": "npm run dev -w worker",
+    "deploy": "npm run deploy -w worker",
+    "index": "npm run start -w indexer",
+    "search": "npm run search -w indexer --"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.4"
+  }
+}
