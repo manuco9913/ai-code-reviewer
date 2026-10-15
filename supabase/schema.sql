@@ -175,3 +175,6 @@ grant select, insert, update, delete on repositories, code_files, code_chunks, r
 grant usage, select on sequence code_chunks_id_seq to service_role;
 grant execute on function hybrid_search(text, text, vector, int, text, boolean, int) to service_role;
 grant execute on function record_index_run(text, text, int) to service_role;
+
+-- Make the Data API pick up new/changed functions immediately.
+notify pgrst, 'reload schema';
