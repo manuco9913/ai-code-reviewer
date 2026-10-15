@@ -53,3 +53,4 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           EMBEDDING_MODEL: ${{ vars.EMBEDDING_MODEL }}
+          EMBED_TEXTS_PER_MINUTE: ${{ vars.EMBED_TEXTS_PER_MINUTE }}

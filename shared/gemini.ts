@@ -1,6 +1,8 @@
 // Google Gemini REST adapter: generation, function calling, JSON mode, embeddings.
 // Depends only on an injected `fetch`, so it runs on Cloudflare Workers and Node alike.
 
+import { isTimeout } from "./net";
+
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const EMBED_BATCH_SIZE = 100;
 const MAX_RETRY_WAIT_MS = 60_000;
@@ -14,11 +16,18 @@ export interface GeminiConfig {
   embeddingModel: string;
   /** Retries on 429/5xx. Keep low inside request handlers, higher in batch jobs. */
   maxRetries: number;
+  /** Embedding texts sent per rolling minute; batches wait rather than exceed it. */
+  embedTextsPerMinute: number;
 }
 
 export interface GeminiDeps {
+  /** Should carry a deadline (see fetchWithTimeout); timeouts are retried. */
   fetch: typeof fetch;
   sleep: (ms: number) => Promise<void>;
+  /** Receives retry notices, including the quota Gemini says was exceeded. */
+  log: (message: string) => void;
+  /** Milliseconds clock, for embedding pacing. */
+  now: () => number;
 }
 
 export type SchemaType = "OBJECT" | "ARRAY" | "STRING" | "INTEGER" | "NUMBER" | "BOOLEAN";
@@ -83,6 +92,9 @@ interface GenerateResponse {
 }
 
 export class Gemini {
+  /** Embedding sends within the last minute, for pacing. */
+  private recentEmbeds: { at: number; count: number }[] = [];
+
   constructor(
     private readonly config: GeminiConfig,
     private readonly deps: GeminiDeps,
@@ -150,8 +162,10 @@ export class Gemini {
   private async embed(texts: string[], taskType: "RETRIEVAL_DOCUMENT" | "CODE_RETRIEVAL_QUERY"): Promise<number[][]> {
     const model = this.config.embeddingModel;
     const vectors: number[][] = [];
-    for (let i = 0; i < texts.length; i += EMBED_BATCH_SIZE) {
-      const batch = texts.slice(i, i + EMBED_BATCH_SIZE);
+    const batchSize = Math.max(1, Math.min(EMBED_BATCH_SIZE, this.config.embedTextsPerMinute));
+    for (let i = 0; i < texts.length; i += batchSize) {
+      const batch = texts.slice(i, i + batchSize);
+      await this.waitForEmbedBudget(batch.length);
       const data = (await this.call(`models/${model}:batchEmbedContents`, {
         requests: batch.map((text) => ({
           model: `models/${model}`,
@@ -171,21 +185,47 @@ export class Gemini {
     return vectors;
   }
 
+  private async waitForEmbedBudget(count: number): Promise<void> {
+    for (;;) {
+      const now = this.deps.now();
+      this.recentEmbeds = this.recentEmbeds.filter((e) => e.at > now - 60_000);
+      const used = this.recentEmbeds.reduce((n, e) => n + e.count, 0);
+      const oldest = this.recentEmbeds[0];
+      if (used + count <= this.config.embedTextsPerMinute || !oldest) {
+        this.recentEmbeds.push({ at: now, count });
+        return;
+      }
+      await this.deps.sleep(oldest.at + 60_000 - now);
+    }
+  }
+
   private async call(path: string, body: unknown): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
-      const res = await this.deps.fetch(`${API_BASE}/${path}`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-goog-api-key": this.config.apiKey },
-        body: JSON.stringify(body),
-      });
+      const lastAttempt = attempt >= this.config.maxRetries;
+      let res: Response;
+      try {
+        res = await this.deps.fetch(`${API_BASE}/${path}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-goog-api-key": this.config.apiKey },
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        if (!isTimeout(err) || lastAttempt) throw err;
+        const wait = retryDelayMs("", attempt);
+        this.deps.log(`Gemini request timed out; retrying in ${Math.round(wait / 1000)}s`);
+        await this.deps.sleep(wait);
+        continue;
+      }
       if (res.ok) return (await res.json()) as unknown;
 
       const text = await res.text();
       const retryable = res.status === 429 || res.status >= 500;
-      if (!retryable || attempt >= this.config.maxRetries) {
+      if (!retryable || lastAttempt) {
         throw new GeminiError(`Gemini API ${res.status}: ${text.slice(0, 500)}`, res.status);
       }
-      await this.deps.sleep(retryDelayMs(text, attempt));
+      const wait = retryDelayMs(text, attempt);
+      this.deps.log(`Gemini ${res.status} (${errorMessage(text)}); retrying in ${Math.round(wait / 1000)}s`);
+      await this.deps.sleep(wait);
     }
   }
 }
@@ -207,6 +247,17 @@ function retryDelayMs(errorBody: string, attempt: number): number {
   const hint = /"retryDelay":\s*"(\d+(?:\.\d+)?)s"/.exec(errorBody);
   const hinted = hint?.[1] ? Math.ceil(parseFloat(hint[1]) * 1000) : 0;
   return Math.min(Math.max(hinted, 1000 * 2 ** attempt), MAX_RETRY_WAIT_MS);
+}
+
+/** The human-readable part of a Gemini error body (it names the exceeded quota on 429s). */
+function errorMessage(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { error?: { message?: unknown } };
+    if (typeof parsed.error?.message === "string") return parsed.error.message.slice(0, 300);
+  } catch {
+    // Not JSON: fall through to the raw text.
+  }
+  return body.slice(0, 300);
 }
 
 function normalize(v: number[]): number[] {

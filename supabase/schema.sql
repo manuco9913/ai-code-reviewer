@@ -59,12 +59,16 @@ create index if not exists code_chunks_embedding_idx on code_chunks using hnsw (
 
 -- Hybrid search: semantic (cosine) and keyword (full-text) result lists fused with
 -- Reciprocal Rank Fusion. Keyword terms are OR-ed so natural-language questions still match.
+-- Code only by default; p_include_docs adds Markdown sections (READMEs, PRDs, research notes).
+-- Dropped first: a changed parameter list would otherwise create a second overload.
+drop function if exists hybrid_search(text, text, vector, int, text, int);
 create or replace function hybrid_search(
   p_repo          text,
   p_query         text,
   p_embedding     vector(768),
   p_match_count   int default 8,
   p_path_prefix   text default null,
+  p_include_docs  boolean default false,
   p_rrf_k         int default 50
 )
 returns table (
@@ -84,7 +88,9 @@ as $$
   ),
   scoped as (
     select c.* from code_chunks c
-    where c.repo = p_repo and (p_path_prefix is null or c.path like p_path_prefix || '%')
+    where c.repo = p_repo
+      and (p_path_prefix is null or c.path like p_path_prefix || '%')
+      and (p_include_docs or c.language <> 'markdown')
   ),
   keyword as (
     select s.id, row_number() over (order by ts_rank_cd(s.fts, websearch_to_tsquery('simple', q.terms)) desc) as rank_ix
@@ -167,5 +173,5 @@ $$;
 grant usage on schema public to service_role;
 grant select, insert, update, delete on repositories, code_files, code_chunks, reviews, pending_actions to service_role;
 grant usage, select on sequence code_chunks_id_seq to service_role;
-grant execute on function hybrid_search(text, text, vector, int, text, int) to service_role;
+grant execute on function hybrid_search(text, text, vector, int, text, boolean, int) to service_role;
 grant execute on function record_index_run(text, text, int) to service_role;

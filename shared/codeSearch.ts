@@ -20,6 +20,8 @@ export interface SearchOptions {
   limit: number;
   /** Only search under this path, e.g. "backend/". Null searches the whole repo. */
   pathPrefix: string | null;
+  /** Also return Markdown sections (READMEs, PRDs, notes). Code only when false. */
+  includeDocs: boolean;
 }
 
 export class CodeSearch {
@@ -44,6 +46,7 @@ export class CodeSearch {
           p_embedding: embeddings[i],
           p_match_count: opts.limit,
           p_path_prefix: opts.pathPrefix,
+          p_include_docs: opts.includeDocs,
         }),
       ),
     );

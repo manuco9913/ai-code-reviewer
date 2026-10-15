@@ -53,6 +53,7 @@ Then try a few questions:
 ```powershell
 npm run search -- "where are scenario files validated?"
 npm run search -- "map markers" frontend/
+npm run search -- "scenario requirements" --with-docs   # include Markdown (PRDs, READMEs)
 ```
 
 ## 4. Index from GitHub Actions (keeps the index fresh)

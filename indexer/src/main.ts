@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Gemini } from "../../shared/gemini";
+import { fetchWithTimeout } from "../../shared/net";
 import { Supabase } from "../../shared/supabase";
 import { loadConfig } from "./config";
 import { indexRepository, type RepoFile } from "./indexer";
@@ -25,11 +26,18 @@ async function main(): Promise<void> {
     }
   }
 
+  const fetchFn = fetchWithTimeout(fetch, config.requestTimeoutMs);
   const gemini = new Gemini(
-    { apiKey: config.geminiApiKey, model: "unused-by-indexer", embeddingModel: config.embeddingModel, maxRetries: 6 },
-    { fetch, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)) },
+    {
+      apiKey: config.geminiApiKey,
+      model: "unused-by-indexer",
+      embeddingModel: config.embeddingModel,
+      maxRetries: 6,
+      embedTextsPerMinute: config.embedTextsPerMinute,
+    },
+    { fetch: fetchFn, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), log: console.log, now: Date.now },
   );
-  const store = new SupabaseIndexStore(new Supabase(config.supabaseUrl, config.supabaseServiceKey, fetch));
+  const store = new SupabaseIndexStore(new Supabase(config.supabaseUrl, config.supabaseServiceKey, fetchFn));
 
   console.log(`Indexing ${config.repo}@${commit.slice(0, 7)} (${files.length} tracked files)`);
   const result = await indexRepository({ repo: config.repo, commit, files }, { store, embedder: gemini, log: console.log });

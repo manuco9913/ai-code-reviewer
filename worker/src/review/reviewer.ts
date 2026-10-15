@@ -269,7 +269,7 @@ async function relatedCode(
     return `${file.path}\n${added.join("\n")}`.slice(0, 1_500);
   });
   try {
-    const perQuery = await search.searchMany(repo, queries, { limit: 4, pathPrefix: null });
+    const perQuery = await search.searchMany(repo, queries, { limit: 4, pathPrefix: null, includeDocs: false });
     const byId = new Map<number, CodeHit>();
     for (const hit of perQuery.flat()) if (!byId.has(hit.id)) byId.set(hit.id, hit);
     return [...byId.values()].sort((a, b) => b.score - a.score).slice(0, MAX_RELATED_CHUNKS);
