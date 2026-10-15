@@ -27,7 +27,8 @@ export class Supabase {
     private readonly key: string,
     private readonly fetchFn: typeof fetch,
   ) {
-    this.base = `${url.replace(/\/+$/, "")}/rest/v1`;
+    // Accept the bare project URL or the REST URL the dashboard shows (".../rest/v1/").
+    this.base = `${url.replace(/\/+$/, "").replace(/\/rest\/v1$/, "")}/rest/v1`;
   }
 
   select<T>(table: string, query: Query): Promise<T[]> {

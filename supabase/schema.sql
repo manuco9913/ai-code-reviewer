@@ -157,3 +157,15 @@ as $$
         chunk_count = excluded.chunk_count,
         indexed_at  = excluded.indexed_at;
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Privileges. Newer Supabase projects don't auto-grant API roles access to new tables, so grant
+-- the server-side role (the secret / service_role key) exactly what DevFlow uses. anon and
+-- authenticated get nothing.
+-- ---------------------------------------------------------------------------
+
+grant usage on schema public to service_role;
+grant select, insert, update, delete on repositories, code_files, code_chunks, reviews, pending_actions to service_role;
+grant usage, select on sequence code_chunks_id_seq to service_role;
+grant execute on function hybrid_search(text, text, vector, int, text, int) to service_role;
+grant execute on function record_index_run(text, text, int) to service_role;
