@@ -39,4 +39,11 @@ describe("loadConfig", () => {
     expect(loadConfig({ ...core, GEMINI_THINKING_LEVEL: "high" }).geminiThinkingLevel).toBe("high");
     expect(() => loadConfig({ ...core, GEMINI_THINKING_LEVEL: "max" })).toThrow(/GEMINI_THINKING_LEVEL/);
   });
+
+  it("uses a fast model for chat by default, separate from the review model", () => {
+    const config = loadConfig(core);
+    expect(config.geminiModel).toBe("gemini-3.8-flash");
+    expect(config.geminiAgentModel).toBe("gemini-flash-lite-latest");
+    expect(loadConfig({ ...core, GEMINI_AGENT_MODEL: "gemini-3.8-flash" }).geminiAgentModel).toBe("gemini-3.8-flash");
+  });
 });

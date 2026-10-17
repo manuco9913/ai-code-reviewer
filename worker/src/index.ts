@@ -5,6 +5,7 @@ import { Gemini } from "../../shared/gemini";
 import { fetchWithTimeout } from "../../shared/net";
 import { Supabase } from "../../shared/supabase";
 import { ActionConflictError, ActionNotFoundError, decideAction } from "./actions/actions";
+import { ChatInputError, parseChatRequest, runAgent } from "./agent/agent";
 import { approvalResponse } from "./actions/approvalPage";
 import { reviewJobFor, type ReviewJob } from "./automation/events";
 import { runReviewJob } from "./automation/reviewJob";
@@ -14,7 +15,7 @@ import { HttpError, isAuthorized, json, readJson } from "./http";
 import { ResendMailer } from "./mailer";
 import { reviewPullRequest } from "./review/reviewer";
 import { verifyGitHubSignature } from "./security";
-import { SupabaseActionStore, SupabaseReviewStore } from "./stores";
+import { SupabaseActionStore, SupabaseDependencyIndex, SupabaseReviewStore } from "./stores";
 
 const APPROVAL_LINK_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -119,6 +120,26 @@ async function handleApi(request: Request, url: URL, s: Services): Promise<Respo
     return json(await reviewPullRequest({ repo, prNumber }, s.reviewDeps));
   }
 
+  if (request.method === "POST" && url.pathname === "/api/chat") {
+    let chat;
+    try {
+      chat = parseChatRequest(await readJson(request));
+    } catch (err) {
+      if (err instanceof ChatInputError) throw new HttpError(400, err.message);
+      throw err;
+    }
+    return json(
+      await runAgent(chat, {
+        model: s.agentGemini,
+        github: s.github,
+        search: s.reviewDeps.search,
+        actions: s.actions,
+        dependencies: s.dependencies,
+        review: s.reviewDeps,
+      }),
+    );
+  }
+
   if (request.method === "GET" && url.pathname === "/api/actions") {
     const status = url.searchParams.get("status") ?? "pending";
     if (!["pending", "approved", "rejected", "executed", "failed"].includes(status)) throw new HttpError(400, "Unknown status");
@@ -150,23 +171,39 @@ function createServices(config: WorkerConfig) {
   // Generation can take a while on large reviews; data APIs should answer quickly.
   const geminiFetch = fetchWithTimeout(fetch, 120_000);
   const dataFetch = fetchWithTimeout(fetch, 20_000);
-  const gemini = new Gemini(
+  const geminiDeps = {
+    fetch: geminiFetch,
+    sleep: (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+    log: console.log,
+    now: Date.now,
+  };
+  const reviewModel = {
+    apiKey: config.geminiApiKey,
+    model: config.geminiModel,
+    embeddingModel: config.embeddingModel,
+    maxRetries: 2,
+    fallbackModels: config.geminiFallbackModels,
+    thinkingLevel: config.geminiThinkingLevel,
+    embedTextsPerMinute: 100,
+  };
+  const gemini = new Gemini(reviewModel, geminiDeps);
+  // Chat is interactive: a fast model first, the review model as the fallback.
+  const agentGemini = new Gemini(
     {
-      apiKey: config.geminiApiKey,
-      model: config.geminiModel,
-      embeddingModel: config.embeddingModel,
-      maxRetries: 2,
-      fallbackModels: config.geminiFallbackModels,
-      thinkingLevel: config.geminiThinkingLevel,
-      embedTextsPerMinute: 100,
+      ...reviewModel,
+      model: config.geminiAgentModel,
+      fallbackModels: [config.geminiModel, ...config.geminiFallbackModels].filter((m) => m !== config.geminiAgentModel),
     },
-    { fetch: geminiFetch, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), log: console.log, now: Date.now },
+    geminiDeps,
   );
   const db = new Supabase(config.supabaseUrl, config.supabaseServiceKey, dataFetch);
   const github = new GitHubClient(config.githubToken, dataFetch);
   return {
     dataFetch,
+    gemini,
+    agentGemini,
     github,
+    dependencies: new SupabaseDependencyIndex(db),
     actions: new SupabaseActionStore(db),
     reviews: new SupabaseReviewStore(db),
     reviewDeps: { github, search: new CodeSearch(db, gemini), model: gemini },

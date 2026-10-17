@@ -40,6 +40,13 @@ export class FakeGitHub implements GitHubReader {
   async getPullRequest() {
     return this.pr;
   }
+  async listPullRequests() {
+    return [this.pr];
+  }
+  async searchIssues(_repo: string, query: string) {
+    const q = query.toLowerCase();
+    return [...this.issues.values()].filter((i) => `${i.title} ${i.body}`.toLowerCase().includes(q));
+  }
   async listPullRequestFiles() {
     return this.files;
   }
@@ -203,3 +210,21 @@ export class FakeMailer {
     this.sent.push(email);
   }
 }
+
+/** Stands in for Gemini in agent tests: replays scripted model turns and records each request. */
+export class ScriptedModel {
+  requests: { system: string; contents: { role: string; parts: Record<string, unknown>[] }[]; toolMode?: string }[] = [];
+  constructor(private readonly turns: { role: "model"; parts: Record<string, unknown>[] }[]) {}
+  async generate(opts: { system: string; contents: { role: string; parts: Record<string, unknown>[] }[]; toolMode?: string }) {
+    this.requests.push({ system: opts.system, contents: structuredClone(opts.contents), toolMode: opts.toolMode });
+    const next = this.turns.shift();
+    if (!next) throw new Error("ScriptedModel ran out of turns");
+    return next;
+  }
+}
+
+export const say = (text: string) => ({ role: "model" as const, parts: [{ text }] });
+export const call = (name: string, args: Record<string, unknown>) => ({
+  role: "model" as const,
+  parts: [{ functionCall: { name, args } }],
+});

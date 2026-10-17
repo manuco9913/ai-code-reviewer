@@ -6,6 +6,7 @@ export interface Env {
   GEMINI_API_KEY?: string;
   GEMINI_MODEL?: string;
   GEMINI_FALLBACK_MODELS?: string;
+  GEMINI_AGENT_MODEL?: string;
   GEMINI_THINKING_LEVEL?: string;
   EMBEDDING_MODEL?: string;
   SUPABASE_URL?: string;
@@ -35,6 +36,8 @@ export interface AutomationConfig {
 export interface WorkerConfig {
   geminiApiKey: string;
   geminiModel: string;
+  /** Chat agent model: interactive, so speed matters more than for reviews. */
+  geminiAgentModel: string;
   /** Tried in order when geminiModel is overloaded. */
   geminiFallbackModels: string[];
   /** "low" keeps reviews to seconds on the free tier; null = model default (much slower). */
@@ -64,6 +67,7 @@ export function loadConfig(env: Env): WorkerConfig {
   return {
     geminiApiKey: value("GEMINI_API_KEY"),
     geminiModel: value("GEMINI_MODEL") || "gemini-3.8-flash",
+    geminiAgentModel: value("GEMINI_AGENT_MODEL") || "gemini-flash-lite-latest",
     geminiFallbackModels: (value("GEMINI_FALLBACK_MODELS") || "gemini-3.7-flash,gemini-flash-lite-latest")
       .split(",")
       .map((m) => m.trim())

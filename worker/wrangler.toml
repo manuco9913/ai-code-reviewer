@@ -11,6 +11,8 @@ GEMINI_MODEL = "gemini-3.8-flash"
 GEMINI_FALLBACK_MODELS = "gemini-3.7-flash,gemini-flash-lite-latest"
 # low: ~15-70s per review in testing; default thinking took 4-5 minutes on the free tier.
 GEMINI_THINKING_LEVEL = "low"
+# Chat agent model. In testing: Flash-Lite answered a multi-tool question in 11s, 3.8 Flash in 281s.
+GEMINI_AGENT_MODEL = "gemini-flash-lite-latest"
 EMBEDDING_MODEL = "gemini-embedding-001"
 
 # PR webhooks enqueue review jobs; the consumer below runs them (reviews outlast GitHub's

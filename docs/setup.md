@@ -176,3 +176,24 @@ email arrives once the review finishes, usually within a minute or two.
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Google retires models; check AI Studio if you get a 404 |
 | `GEMINI_FALLBACK_MODELS` | `gemini-3.7-flash,gemini-flash-lite-latest` | Tried in order when the main model is overloaded |
 | `GEMINI_THINKING_LEVEL` | `low` | `low` took 15–70s per review in testing and caught 5 of 6 planted issues; `default` took 4–5 minutes |
+
+## 7. Chat with the agent (API)
+
+The agent answers questions about the repo: it searches code, reads files, PRs and issues, looks
+at the import graph, and can run a review. It **cannot post anything**: "comment on #12" becomes a
+pending action you approve (`GET /api/actions`, then `POST /api/actions/<id>/approve`). The web UI
+(next step) wraps this.
+
+```powershell
+$token = "<API_TOKEN>"
+$body = @{ repo = "owner/name"; messages = @(@{ role = "user"; text = "Which files import src/geo.ts?" }) } | ConvertTo-Json -Depth 4
+Invoke-RestMethod -Method Post https://devflow-ai.<you>.workers.dev/api/chat `
+  -Headers @{ Authorization = "Bearer $token" } -ContentType "application/json" -Body $body
+```
+
+Chat uses `GEMINI_AGENT_MODEL` (Flash-Lite by default): in testing it answered a multi-tool
+question in 11s where 3.8 Flash took over 4 minutes. Reviews keep using `GEMINI_MODEL`.
+
+> **Free-plan limit:** a Worker request may make at most 50 outgoing calls. A chat that also runs
+> `review_pull_request` on a big PR can approach that; if you see "Too many subrequests", ask for
+> the review separately.

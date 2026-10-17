@@ -46,6 +46,10 @@ export interface CheckRun {
 
 export interface GitHubReader {
   getPullRequest(repo: string, number: number): Promise<PullRequest>;
+  /** Most recently updated first. */
+  listPullRequests(repo: string, state: "open" | "closed" | "all"): Promise<PullRequest[]>;
+  /** Issues (not PRs) matching a GitHub search query, e.g. "map markers is:open". */
+  searchIssues(repo: string, query: string): Promise<Issue[]>;
   listPullRequestFiles(repo: string, number: number): Promise<PullRequestFile[]>;
   listPullRequestCommits(repo: string, number: number): Promise<Commit[]>;
   /** Issues the PR will close (GitHub's "linked issues"). */

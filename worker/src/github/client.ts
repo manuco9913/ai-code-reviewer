@@ -23,19 +23,18 @@ export class GitHubClient implements GitHubReader, GitHubWriter {
   ) {}
 
   async getPullRequest(repo: string, number: number): Promise<PullRequest> {
-    const pr = await this.get<RawPull>(`/repos/${repo}/pulls/${number}`);
-    return {
-      number: pr.number,
-      title: pr.title,
-      body: pr.body ?? "",
-      author: pr.user?.login ?? "",
-      url: pr.html_url,
-      state: pr.state,
-      headSha: pr.head.sha,
-      baseSha: pr.base.sha,
-      headRef: pr.head.ref,
-      baseRef: pr.base.ref,
-    };
+    return toPullRequest(await this.get<RawPull>(`/repos/${repo}/pulls/${number}`));
+  }
+
+  async listPullRequests(repo: string, state: "open" | "closed" | "all"): Promise<PullRequest[]> {
+    const prs = await this.get<RawPull[]>(`/repos/${repo}/pulls?state=${state}&sort=updated&direction=desc&per_page=20`);
+    return prs.map(toPullRequest);
+  }
+
+  async searchIssues(repo: string, query: string): Promise<Issue[]> {
+    const q = encodeURIComponent(`repo:${repo} is:issue ${query}`);
+    const found = await this.get<{ items: RawIssue[] }>(`/search/issues?q=${q}&per_page=15`);
+    return found.items.filter((i) => !i.pull_request).map(toIssue);
   }
 
   async listPullRequestFiles(repo: string, number: number): Promise<PullRequestFile[]> {
@@ -84,14 +83,7 @@ export class GitHubClient implements GitHubReader, GitHubWriter {
   async getIssue(repo: string, number: number): Promise<Issue | null> {
     const issue = await this.getOrNull<RawIssue>(`/repos/${repo}/issues/${number}`);
     if (!issue || issue.pull_request) return null; // the issues API also returns PRs
-    return {
-      number: issue.number,
-      title: issue.title,
-      body: issue.body ?? "",
-      state: issue.state,
-      labels: issue.labels.map((l) => (typeof l === "string" ? l : (l.name ?? ""))).filter(Boolean),
-      url: issue.html_url,
-    };
+    return toIssue(issue);
   }
 
   async listFiles(repo: string, ref: string): Promise<string[]> {
@@ -216,4 +208,30 @@ interface RawIssue {
   labels: (string | { name?: string })[];
   html_url: string;
   pull_request?: unknown;
+}
+
+function toPullRequest(pr: RawPull): PullRequest {
+  return {
+    number: pr.number,
+    title: pr.title,
+    body: pr.body ?? "",
+    author: pr.user?.login ?? "",
+    url: pr.html_url,
+    state: pr.state,
+    headSha: pr.head.sha,
+    baseSha: pr.base.sha,
+    headRef: pr.head.ref,
+    baseRef: pr.base.ref,
+  };
+}
+
+function toIssue(issue: RawIssue): Issue {
+  return {
+    number: issue.number,
+    title: issue.title,
+    body: issue.body ?? "",
+    state: issue.state,
+    labels: issue.labels.map((l) => (typeof l === "string" ? l : (l.name ?? ""))).filter(Boolean),
+    url: issue.html_url,
+  };
 }

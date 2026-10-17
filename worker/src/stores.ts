@@ -1,7 +1,8 @@
 // Supabase adapters for the action and review stores. The only Worker code that knows these tables.
 
-import type { Supabase } from "../../shared/supabase";
+import { pgQuote, type Supabase } from "../../shared/supabase";
 import type { ActionPayload, ActionStatus, ActionStore, PendingAction } from "./actions/actions";
+import type { DependencyIndex } from "./agent/agent";
 import type { ReviewStore } from "./automation/reviewJob";
 import type { ReviewResult } from "./review/reviewer";
 
@@ -93,5 +94,30 @@ export class SupabaseReviewStore implements ReviewStore {
       [{ repo: result.repo, pr_number: result.prNumber, head_sha: result.headSha, result }],
       "repo,pr_number,head_sha",
     );
+  }
+}
+
+/** The indexer's import graph (code_files), for the agent's analyze_dependencies tool. */
+export class SupabaseDependencyIndex implements DependencyIndex {
+  constructor(private readonly db: Supabase) {}
+
+  async fileDeps(repo: string, path: string): Promise<{ imports: string[]; packages: string[] } | null> {
+    const [row] = await this.db.select<{ imports: string[]; packages: string[] }>("code_files", {
+      repo: `eq.${repo}`,
+      path: `eq.${path}`,
+      select: "imports,packages",
+    });
+    return row ?? null;
+  }
+
+  async dependents(repo: string, path: string): Promise<string[]> {
+    const rows = await this.db.select<{ path: string }>("code_files", {
+      repo: `eq.${repo}`,
+      imports: `cs.{${pgQuote(path)}}`,
+      select: "path",
+      order: "path",
+      limit: "50",
+    });
+    return rows.map((r) => r.path);
   }
 }
