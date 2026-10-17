@@ -26,5 +26,9 @@ queue = "devflow-reviews"
 max_batch_size = 1
 max_retries = 2
 
+# Web UI (worker/public): served as static assets; everything else falls through to the Worker.
+[assets]
+directory = "./public"
+
 [observability]
 enabled = true

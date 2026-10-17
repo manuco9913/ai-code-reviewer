@@ -46,8 +46,19 @@ export async function runReviewJob(job: ReviewJob, deps: ReviewJobDeps): Promise
   const result = await reviewPullRequest({ repo: job.repo, prNumber: job.prNumber }, deps.review);
   await deps.reviews.save(result);
 
+  const actions = await proposeReviewActions(result, deps.actions);
+  const links = await Promise.all(actions.map(async (action) => ({ action, url: await approvalUrl(action.id, deps.links) })));
+  await deps.mailer.send(reviewEmail(result, links));
+  return { status: "reviewed", result, actions };
+}
+
+/**
+ * The GitHub updates a review leads to, as pending actions: the review itself, plus an issue
+ * comment when the linked requirements are not fully met.
+ */
+export async function proposeReviewActions(result: ReviewResult, store: ActionStore): Promise<PendingAction[]> {
   const actions = [
-    await deps.actions.create(result.repo, `Post the review on PR #${result.prNumber}`, {
+    await store.create(result.repo, `Post the review on PR #${result.prNumber}`, {
       kind: "pr_review",
       prNumber: result.prNumber,
       commitId: result.headSha,
@@ -59,7 +70,7 @@ export async function runReviewJob(job: ReviewJob, deps: ReviewJobDeps): Promise
   const issueNumber = result.linkedIssues[0];
   if (unmet && issueNumber !== undefined) {
     actions.push(
-      await deps.actions.create(result.repo, `Comment on issue #${issueNumber}`, {
+      await store.create(result.repo, `Comment on issue #${issueNumber}`, {
         kind: "issue_update",
         issueNumber,
         comment: requirementsComment(result),
@@ -67,10 +78,7 @@ export async function runReviewJob(job: ReviewJob, deps: ReviewJobDeps): Promise
       }),
     );
   }
-
-  const links = await Promise.all(actions.map(async (action) => ({ action, url: await approvalUrl(action.id, deps.links) })));
-  await deps.mailer.send(reviewEmail(result, links));
-  return { status: "reviewed", result, actions };
+  return actions;
 }
 
 export async function approvalUrl(actionId: string, links: ApprovalLinks): Promise<string> {

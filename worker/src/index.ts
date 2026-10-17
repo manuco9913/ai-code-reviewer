@@ -8,11 +8,12 @@ import { ActionConflictError, ActionNotFoundError, decideAction } from "./action
 import { ChatInputError, parseChatRequest, runAgent } from "./agent/agent";
 import { approvalResponse } from "./actions/approvalPage";
 import { reviewJobFor, type ReviewJob } from "./automation/events";
-import { runReviewJob } from "./automation/reviewJob";
+import { proposeReviewActions, runReviewJob } from "./automation/reviewJob";
 import { loadConfig, type AutomationConfig, type Env, type WorkerConfig } from "./config";
 import { GitHubClient } from "./github/client";
 import { HttpError, isAuthorized, json, readJson } from "./http";
 import { ResendMailer } from "./mailer";
+import { renderMarkdown } from "./markdown";
 import { reviewPullRequest } from "./review/reviewer";
 import { verifyGitHubSignature } from "./security";
 import { SupabaseActionStore, SupabaseDependencyIndex, SupabaseReviewStore } from "./stores";
@@ -117,7 +118,10 @@ async function handleApi(request: Request, url: URL, s: Services): Promise<Respo
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !Number.isInteger(prNumber) || prNumber < 1) {
       throw new HttpError(400, 'Expected {"repo": "owner/name", "prNumber": 123}');
     }
-    return json(await reviewPullRequest({ repo, prNumber }, s.reviewDeps));
+    const review = await reviewPullRequest({ repo, prNumber }, s.reviewDeps);
+    // propose: also queue "post this review" for approval, as the webhook flow does.
+    const proposals = body.propose === true ? await proposeReviewActions(review, s.actions) : [];
+    return json({ ...review, proposals });
   }
 
   if (request.method === "POST" && url.pathname === "/api/chat") {
@@ -128,16 +132,15 @@ async function handleApi(request: Request, url: URL, s: Services): Promise<Respo
       if (err instanceof ChatInputError) throw new HttpError(400, err.message);
       throw err;
     }
-    return json(
-      await runAgent(chat, {
-        model: s.agentGemini,
-        github: s.github,
-        search: s.reviewDeps.search,
-        actions: s.actions,
-        dependencies: s.dependencies,
-        review: s.reviewDeps,
-      }),
-    );
+    const result = await runAgent(chat, {
+      model: s.agentGemini,
+      github: s.github,
+      search: s.reviewDeps.search,
+      actions: s.actions,
+      dependencies: s.dependencies,
+      review: s.reviewDeps,
+    });
+    return json({ ...result, replyHtml: renderMarkdown(result.reply) });
   }
 
   if (request.method === "GET" && url.pathname === "/api/actions") {

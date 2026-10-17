@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>DevFlow AI</title>
+    <link rel="stylesheet" href="/app.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><span class="logo" aria-hidden="true">◆</span> DevFlow AI</div>
+      <label class="repo">
+        <span class="sr-only">Repository</span>
+        <input id="repo" placeholder="owner/repo" autocomplete="off" spellcheck="false" />
+      </label>
+      <button id="settings-btn" class="ghost" type="button">Settings</button>
+    </header>
+
+    <main class="layout">
+      <section class="chat" aria-label="Chat">
+        <div id="messages" class="messages" aria-live="polite">
+          <div class="empty" id="empty">
+            <h1>Ask about your repository</h1>
+            <p>The agent searches the indexed code, reads files, PRs and issues, and can run a review.
+              It can't post anything: updates it proposes wait for your approval on the right.</p>
+            <div class="suggestions">
+              <button type="button" class="chip" data-prompt="Give me a tour of this codebase: main parts and where they live.">Tour the codebase</button>
+              <button type="button" class="chip" data-prompt="Which open pull requests are there, and what does each change?">Open pull requests</button>
+              <button type="button" class="chip" data-prompt="Which open issues look done already, judging by the code?">Issues that look done</button>
+            </div>
+          </div>
+        </div>
+        <form id="composer" class="composer">
+          <label for="prompt" class="sr-only">Message</label>
+          <textarea id="prompt" rows="2" placeholder="Ask about code, PRs or issues… (Enter to send, Shift+Enter for a new line)"></textarea>
+          <div class="composer-actions">
+            <button type="button" id="clear" class="ghost">New chat</button>
+            <button type="submit" id="send">Send</button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="side">
+        <section class="panel" aria-labelledby="review-title">
+          <h2 id="review-title">Review a pull request</h2>
+          <form id="review-form" class="review-form">
+            <label for="pr-number" class="sr-only">PR number</label>
+            <input id="pr-number" type="number" min="1" placeholder="PR #" required />
+            <button type="submit" id="review-btn">Review</button>
+          </form>
+          <p class="hint">Runs the reviewer and queues "post this review" below for approval.</p>
+          <div id="review-result"></div>
+        </section>
+
+        <section class="panel" aria-labelledby="approvals-title">
+          <div class="panel-head">
+            <h2 id="approvals-title">Awaiting approval</h2>
+            <button type="button" id="refresh" class="ghost small">Refresh</button>
+          </div>
+          <div id="actions" class="actions"><p class="hint">Nothing waiting.</p></div>
+        </section>
+      </aside>
+    </main>
+
+    <dialog id="settings">
+      <form method="dialog" id="settings-form">
+        <h2>Settings</h2>
+        <label>API token
+          <input id="token" type="password" autocomplete="off" placeholder="API_TOKEN from your Worker secrets" />
+        </label>
+        <p class="hint">Stored only in this browser. Every request sends it as a bearer token.</p>
+        <div class="dialog-actions">
+          <button type="submit" value="save">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+  </body>
+</html>
