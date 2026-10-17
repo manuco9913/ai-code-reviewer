@@ -16,6 +16,10 @@ export interface GeminiConfig {
   embeddingModel: string;
   /** Retries on 429/5xx. Keep low inside request handlers, higher in batch jobs. */
   maxRetries: number;
+  /** Tried in order when `model` stays overloaded (free-tier capacity varies by model). */
+  fallbackModels: string[];
+  /** Gemini 3 thinking depth ("low" answers much faster); null keeps the model's default. */
+  thinkingLevel: "low" | "medium" | "high" | null;
   /** Embedding texts sent per rolling minute; batches wait rather than exceed it. */
   embedTextsPerMinute: number;
 }
@@ -141,7 +145,9 @@ export class Gemini {
   ): Promise<Content> {
     const body: Record<string, unknown> = {
       contents: opts.contents,
-      generationConfig,
+      generationConfig: this.config.thinkingLevel
+        ? { ...generationConfig, thinkingConfig: { thinkingLevel: this.config.thinkingLevel } }
+        : generationConfig,
       systemInstruction: { parts: [{ text: opts.system }] },
     };
     if (opts.tools?.length) {
@@ -150,7 +156,7 @@ export class Gemini {
     }
 
     // Cast once at the edge: the response shape is Google's documented contract.
-    const data = (await this.call(`models/${this.config.model}:generateContent`, body)) as GenerateResponse;
+    const data = (await this.generateWithFallback(body)) as GenerateResponse;
     const candidate = data.candidates?.[0];
     if (!candidate?.content) {
       const reason = data.promptFeedback?.blockReason ?? candidate?.finishReason ?? "no candidates";
@@ -183,6 +189,25 @@ export class Gemini {
       for (const e of embeddings) vectors.push(normalize(e.values ?? []));
     }
     return vectors;
+  }
+
+  /**
+   * Tries the configured model, then each fallback, moving on only when a model stays overloaded
+   * (429/5xx/timeout after its retries). Request errors (4xx) fail immediately.
+   */
+  private async generateWithFallback(body: unknown): Promise<unknown> {
+    const models = [this.config.model, ...this.config.fallbackModels];
+    for (const [i, model] of models.entries()) {
+      try {
+        return await this.call(`models/${model}:generateContent`, body);
+      } catch (err) {
+        const next = models[i + 1];
+        const overloaded = isTimeout(err) || (err instanceof GeminiError && (err.status === 429 || (err.status ?? 0) >= 500));
+        if (!next || !overloaded) throw err;
+        this.deps.log(`Gemini model ${model} unavailable (${err instanceof Error ? err.message.slice(0, 120) : err}); trying ${next}`);
+      }
+    }
+    throw new GeminiError("No Gemini model configured", null);
   }
 
   private async waitForEmbedBudget(count: number): Promise<void> {

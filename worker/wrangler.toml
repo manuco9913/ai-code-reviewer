@@ -2,11 +2,27 @@ name = "devflow-ai"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
-# Non-secret settings. Secrets (GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_TOKEN,
-# API_TOKEN) are set with `npx wrangler secret put NAME`, or in worker/.dev.vars for local dev.
+# Non-secret settings. Secrets are set with `npx wrangler secret put NAME`, or in worker/.dev.vars
+# for local dev. Core: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY, GITHUB_TOKEN, API_TOKEN.
+# Automation (all or none): GITHUB_WEBHOOK_SECRET, APPROVAL_SECRET, PUBLIC_URL, RESEND_API_KEY, EMAIL_TO.
 [vars]
-GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_MODEL = "gemini-3.8-flash"
+# Tried in order when the main model is overloaded (common on the free tier).
+GEMINI_FALLBACK_MODELS = "gemini-3.7-flash,gemini-flash-lite-latest"
+# low: ~15-70s per review in testing; default thinking took 4-5 minutes on the free tier.
+GEMINI_THINKING_LEVEL = "low"
 EMBEDDING_MODEL = "gemini-embedding-001"
+
+# PR webhooks enqueue review jobs; the consumer below runs them (reviews outlast GitHub's
+# 10-second webhook timeout). Create once with: npx wrangler queues create devflow-reviews
+[[queues.producers]]
+binding = "REVIEW_QUEUE"
+queue = "devflow-reviews"
+
+[[queues.consumers]]
+queue = "devflow-reviews"
+max_batch_size = 1
+max_retries = 2
 
 [observability]
 enabled = true

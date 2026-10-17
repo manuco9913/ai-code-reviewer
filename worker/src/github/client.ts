@@ -1,5 +1,6 @@
 // GitHubReader over the GitHub REST and GraphQL APIs. The only Worker code that knows GitHub URLs.
 
+import type { GitHubWriter, InlineReviewComment } from "../actions/actions";
 import type { CheckRun, Commit, GitHubReader, Issue, PullRequest, PullRequestFile } from "./types";
 
 const API = "https://api.github.com";
@@ -15,7 +16,7 @@ export class GitHubError extends Error {
   }
 }
 
-export class GitHubClient implements GitHubReader {
+export class GitHubClient implements GitHubReader, GitHubWriter {
   constructor(
     private readonly token: string,
     private readonly fetchFn: typeof fetch,
@@ -108,6 +109,37 @@ export class GitHubClient implements GitHubReader {
     if (res.status === 404) return null;
     if (!res.ok) throw new GitHubError(`GitHub GET contents/${path} failed (${res.status})`, res.status);
     return res.text();
+  }
+
+  // --- Writes: only ever called by an approved pending action. ---------------------------------
+
+  async createReview(
+    repo: string,
+    prNumber: number,
+    review: { commitId: string; body: string; comments: InlineReviewComment[] },
+  ): Promise<{ url: string }> {
+    const created = await this.request<{ html_url: string }>(`/repos/${repo}/pulls/${prNumber}/reviews`, {
+      method: "POST",
+      body: JSON.stringify({
+        commit_id: review.commitId,
+        body: review.body,
+        event: "COMMENT",
+        comments: review.comments.map((c) => ({ path: c.path, line: c.line, side: "RIGHT", body: c.body })),
+      }),
+    });
+    return { url: created.html_url };
+  }
+
+  async createIssueComment(repo: string, number: number, body: string): Promise<{ url: string }> {
+    const created = await this.request<{ html_url: string }>(`/repos/${repo}/issues/${number}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    });
+    return { url: created.html_url };
+  }
+
+  async addLabels(repo: string, number: number, labels: string[]): Promise<void> {
+    await this.request(`/repos/${repo}/issues/${number}/labels`, { method: "POST", body: JSON.stringify({ labels }) });
   }
 
   async listCheckRuns(repo: string, sha: string): Promise<CheckRun[]> {

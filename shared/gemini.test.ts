@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Gemini, GeminiError } from "./gemini";
 
-const config = { apiKey: "k", model: "flash", embeddingModel: "embed", maxRetries: 2, embedTextsPerMinute: 100_000 };
+const config = { apiKey: "k", model: "flash", embeddingModel: "embed", maxRetries: 2, fallbackModels: [], thinkingLevel: null, embedTextsPerMinute: 100_000 };
 
 function fakeFetch(responses: (Response | Error)[]) {
   const requests: { url: string; body: unknown }[] = [];
@@ -120,5 +120,46 @@ describe("Gemini embedding pacing", () => {
 
     expect(net.requests).toHaveLength(3);
     expect(waits).toEqual([60_000, 60_000]);
+  });
+});
+
+describe("Gemini model fallback", () => {
+  it("moves to the next model when one stays overloaded, but not on a request error", async () => {
+    const ok = json({ candidates: [{ content: { parts: [{ text: "from fallback" }] } }] });
+    const net = fakeFetch([json({ error: { message: "high demand" } }, 503), ok]);
+    const logs: string[] = [];
+    const gemini = new Gemini(
+      { ...config, model: "primary", fallbackModels: ["backup"], maxRetries: 0 },
+      { fetch: net.fetch, sleep: async () => {}, log: (m) => void logs.push(m), now: () => 0 },
+    );
+
+    const reply = await gemini.generate({ system: "s", contents: [], temperature: 0 });
+
+    expect(reply.parts[0]?.text).toBe("from fallback");
+    expect(net.requests.map((r) => r.url.split("/models/")[1])).toEqual(["primary:generateContent", "backup:generateContent"]);
+    expect(logs.join("\n")).toMatch(/backup/);
+
+    const badRequest = fakeFetch([json({ error: { message: "invalid schema" } }, 400)]);
+    const strict = new Gemini(
+      { ...config, model: "primary", fallbackModels: ["backup"], maxRetries: 0 },
+      { fetch: badRequest.fetch, sleep: async () => {}, log: () => {}, now: () => 0 },
+    );
+    await expect(strict.generate({ system: "s", contents: [], temperature: 0 })).rejects.toMatchObject({ status: 400 });
+    expect(badRequest.requests).toHaveLength(1);
+  });
+});
+
+describe("Gemini thinking level", () => {
+  it("asks for the configured thinking level, and leaves the model default when none is set", async () => {
+    const ok = () => json({ candidates: [{ content: { parts: [{ text: "ok" }] } }] });
+    const deps = (f: typeof fetch) => ({ fetch: f, sleep: async () => {}, log: () => {}, now: () => 0 });
+    const low = fakeFetch([ok()]);
+    const unset = fakeFetch([ok()]);
+
+    await new Gemini({ ...config, thinkingLevel: "low" }, deps(low.fetch)).generate({ system: "s", contents: [], temperature: 0 });
+    await new Gemini({ ...config, thinkingLevel: null }, deps(unset.fetch)).generate({ system: "s", contents: [], temperature: 0 });
+
+    expect(low.requests[0]?.body).toMatchObject({ generationConfig: { thinkingConfig: { thinkingLevel: "low" } } });
+    expect(JSON.stringify(unset.requests[0]?.body)).not.toContain("thinkingConfig");
   });
 });

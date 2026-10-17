@@ -1,0 +1,10 @@
+// HTML escaping for pages and emails that include text from PRs, issues or the model.
+
+export function esc(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}

@@ -33,6 +33,8 @@ async function main(): Promise<void> {
       model: "unused-by-indexer",
       embeddingModel: config.embeddingModel,
       maxRetries: 6,
+      fallbackModels: [],
+      thinkingLevel: null,
       embedTextsPerMinute: config.embedTextsPerMinute,
     },
     { fetch: fetchFn, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), log: console.log, now: Date.now },

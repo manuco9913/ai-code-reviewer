@@ -7,7 +7,8 @@ progresses; this page covers what the current step needs.
 |---|---|
 | 1–2. Index + search (now) | Gemini API key, Supabase project |
 | 2b. Index from GitHub Actions | This repo pushed to GitHub, a fine-grained PAT |
-| 3–4. Reviewer, approvals, email | Cloudflare account, Resend account, GitHub webhook *(guide added then)* |
+| 5. Reviewer locally | A GitHub token with read access |
+| 6. Automated reviews | Cloudflare account, Resend account, a GitHub webhook |
 
 > **Privacy note — read before indexing private code.** On Gemini's *free* tier, Google may use
 > prompts and responses to improve its products. Indexing and reviewing a repository sends its code
@@ -107,3 +108,71 @@ standards:
 skills: [tdd, improve-codebase-architecture]
 ignore: ["research/**"]             # changed files the reviewer skips
 ```
+
+## 6. Automated reviews: webhook → review → email → approve
+
+Once deployed, every PR that opens or gets new commits is reviewed in the background. You get an
+email with the summary and links. **Nothing is posted to GitHub until you click a link and press
+Approve** on the page it opens (opening the link alone changes nothing).
+
+### 6.1 Resend (email)
+
+1. Sign up at <https://resend.com> with the address you want reviews sent to.
+2. **API Keys → Create API key** (Sending access). This is `RESEND_API_KEY`.
+
+Without a verified domain, Resend only delivers to your own signup address, from
+`onboarding@resend.dev`. That's enough for personal use. To email others, verify a domain and set
+`EMAIL_FROM` (e.g. `DevFlow <devflow@yourdomain.com>`).
+
+### 6.2 GitHub token with write access
+
+The PAT needs to post reviews once you approve them. Edit it (or create one for the Worker) with,
+on the reviewed repos: **Contents: Read**, **Metadata: Read**, **Pull requests: Read and write**,
+**Issues: Read and write**, and **Checks: Read** if offered.
+
+### 6.3 Cloudflare Worker
+
+```powershell
+cd worker
+npx wrangler login                                  # opens the browser once
+npx wrangler queues create devflow-reviews
+npx wrangler deploy                                 # prints https://devflow-ai.<you>.workers.dev
+```
+
+Then set the secrets. Each command prompts for the value, so it never lands in your shell history:
+
+```powershell
+npx wrangler secret put GEMINI_API_KEY
+npx wrangler secret put SUPABASE_URL
+npx wrangler secret put SUPABASE_SERVICE_KEY
+npx wrangler secret put GITHUB_TOKEN
+npx wrangler secret put API_TOKEN              # long random string
+npx wrangler secret put GITHUB_WEBHOOK_SECRET  # long random string; you'll paste it into GitHub too
+npx wrangler secret put APPROVAL_SECRET        # long random string (32+ chars); signs email links
+npx wrangler secret put PUBLIC_URL             # the workers.dev URL printed by deploy
+npx wrangler secret put RESEND_API_KEY
+npx wrangler secret put EMAIL_TO               # your email (comma-separate several)
+```
+
+Generate random strings with `node -e "console.log(crypto.randomUUID()+crypto.randomUUID())"`.
+Check it's up: open `https://devflow-ai.<you>.workers.dev/health`, which should show `{"ok": true}`.
+
+### 6.4 GitHub webhook (per repo to review)
+
+Repo → **Settings → Webhooks → Add webhook**:
+
+- Payload URL: `https://devflow-ai.<you>.workers.dev/webhooks/github`
+- Content type: `application/json`
+- Secret: the same value as `GITHUB_WEBHOOK_SECRET`
+- Events: **Let me select individual events** → only **Pull requests**
+
+GitHub sends a ping; the webhook should show a green tick. Open a PR (or push to one) and the
+email arrives once the review finishes, usually within a minute or two.
+
+### Tuning
+
+| Setting (`wrangler.toml` `[vars]`) | Default | Notes |
+|---|---|---|
+| `GEMINI_MODEL` | `gemini-3.8-flash` | Google retires models; check AI Studio if you get a 404 |
+| `GEMINI_FALLBACK_MODELS` | `gemini-3.7-flash,gemini-flash-lite-latest` | Tried in order when the main model is overloaded |
+| `GEMINI_THINKING_LEVEL` | `low` | `low` took 15–70s per review in testing and caught 5 of 6 planted issues; `default` took 4–5 minutes |

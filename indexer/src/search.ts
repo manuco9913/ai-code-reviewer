@@ -21,6 +21,8 @@ async function main(): Promise<void> {
       model: "unused-by-search",
       embeddingModel: config.embeddingModel,
       maxRetries: 2,
+      fallbackModels: [],
+      thinkingLevel: null,
       embedTextsPerMinute: config.embedTextsPerMinute,
     },
     { fetch: fetchFn, sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)), log: console.log, now: Date.now },

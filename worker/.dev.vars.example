@@ -3,5 +3,12 @@ GEMINI_API_KEY=xxx
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_SERVICE_KEY=sb_secret_xxx
 GITHUB_TOKEN=github_pat_xxx
-# Any long random string; generate one with: node -e "console.log(crypto.randomUUID()+crypto.randomUUID())"
+# Long random strings; generate with: node -e "console.log(crypto.randomUUID()+crypto.randomUUID())"
 API_TOKEN=change-me-to-a-long-random-string
+
+# Automation (all or none). Leave them out to use only /api/review.
+# GITHUB_WEBHOOK_SECRET=change-me
+# APPROVAL_SECRET=change-me-to-a-long-random-string
+# PUBLIC_URL=https://devflow-ai.<your-subdomain>.workers.dev
+# RESEND_API_KEY=re_xxx
+# EMAIL_TO=you@example.com
